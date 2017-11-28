@@ -1,0 +1,13 @@
+Yeebase:
+  TwoFactorAuthentication:
+    # Length of the secret key that is created for the validation of secrets
+    secretKeyLengthInByte: 1
+
+    # The application name that should appear in the authenticator app
+    applicationName: 'default'
+
+    # The target of the redirect which is issued when no Two-Factor-Authentication secret is specified
+    authenticationEntryPoint:
+      package: ~
+      controller: ~
+      action: 'insertSecret'

@@ -14,4 +14,4 @@ composer require yeebase/twofactorauthentication
 ```
 from your project's root.
 
-TODO: Description of integration (abstract two-factor-auth controller) and settings
+TODO: Description of integration (abstract two-factor-auth controller, templates) and settings
