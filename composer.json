@@ -1,0 +1,17 @@
+{
+  "name": "yeebase/twofactorauthentication",
+  "type": "neos-package",
+  "description": "Two-Factor-Authentication for Neos Flow",
+  "license": "MIT",
+  "require": {
+    "neos/flow": "^4.0",
+    "pragmarx/google2fa": "^2.0",
+    "bacon/bacon-qr-code": "^1.0"
+
+  },
+  "autoload": {
+    "psr-4": {
+      "Yeebase\\TwoFactorAuthentication\\": "Classes"
+    }
+  }
+}
