@@ -39,6 +39,7 @@ class TwoFactorAuthenticationService
         $secretIsValid = false;
         $credentials = $this->getTwoFactorAuthenticationCredentials($account);
         $userSecret = $isInitialValidation ? $credentials->pendingSecret : $credentials->secret;
+        $secret = str_replace(' ', '', $secret);
 
         try {
             $secretIsValid = (new Google2Fa())->verifyKey($userSecret, $secret);
