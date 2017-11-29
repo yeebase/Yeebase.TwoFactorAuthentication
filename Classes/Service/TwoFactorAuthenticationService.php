@@ -116,7 +116,7 @@ class TwoFactorAuthenticationService
         $this->setTwoFactorAuthenticationCredentials($account, $credentials);
     }
 
-    protected function getTwoFactorAuthenticationCredentials(Account $account): TwoFactorAuthenticationCredentialsSource
+    protected function getTwoFactorAuthenticationCredentials(Account $account)
     {
         if (! $this->hasTwoFactorAuthenticationCredentials($account)) {
             throw new \Exception('Trying to access uninitialized Two-Factor-Authentication credentials.', 1511271518);

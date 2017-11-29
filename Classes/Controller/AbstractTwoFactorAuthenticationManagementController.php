@@ -4,10 +4,17 @@ namespace Yeebase\TwoFactorAuthentication\Controller;
 use Neos\Flow\Annotations as Flow;
 use Neos\Error\Messages\Message;
 use Neos\Flow\Mvc\Controller\ActionController;
+use Neos\Flow\Security\Context;
 use Yeebase\TwoFactorAuthentication\Service\TwoFactorAuthenticationService;
 
 abstract class AbstractTwoFactorAuthenticationManagementController extends ActionController
 {
+
+    /**
+     * @var Context
+     * @Flow\Inject
+     */
+    protected $securityContext;
 
     /**
      * @var TwoFactorAuthenticationService
@@ -32,9 +39,9 @@ abstract class AbstractTwoFactorAuthenticationManagementController extends Actio
 
         if ($this->twoFactorAuthenticationService->validateSecret($secret, $account, true)) {
             $this->twoFactorAuthenticationService->enableTwoFactorAuthentication($account);
-            $this->addFlashMessage('Zwei-Faktor-Authentisierung aktiviert.');
+            $this->addFlashMessage('Two-Factor-Authentication activated.', '', Message::SEVERITY_OK, [], 1511944292);
         } else {
-            $this->addFlashMessage('Falsches Secret.', Message::SEVERITY_ERROR);
+            $this->addFlashMessage('Wrong Secret.', '', Message::SEVERITY_ERROR, [], 1511944293);
         }
 
         $this->redirect('configure');
@@ -46,9 +53,9 @@ abstract class AbstractTwoFactorAuthenticationManagementController extends Actio
 
         if ($this->twoFactorAuthenticationService->validateSecret($secret, $account)) {
             $this->twoFactorAuthenticationService->disableTwoFactorAuthentication($account);
-            $this->addFlashMessage('Zwei-Faktor-Authentisierung deaktiviert.');
+            $this->addFlashMessage('Two-Factor-Authentication deactivated.', '', Message::SEVERITY_OK, [], 1511944294);
         } else {
-            $this->addFlashMessage('Falsches Secret.', Message::SEVERITY_ERROR);
+            $this->addFlashMessage('Wrong Secret.', '', Message::SEVERITY_ERROR, [], 1511944293);
         }
 
         $this->redirect('configure');
