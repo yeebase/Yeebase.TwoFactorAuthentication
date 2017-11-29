@@ -1,7 +1,8 @@
 Yeebase:
   TwoFactorAuthentication:
     # Length of the secret key that is created for the validation of secrets
-    secretKeyLengthInByte: 1
+    # The length given here is multiplied with 8 as the key must be at least 8 chars and be a power of 2
+    secretKeyLength: 2
 
     # The application name that should appear in the authenticator app
     applicationName: 'default'

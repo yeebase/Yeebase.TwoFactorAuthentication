@@ -25,6 +25,12 @@ class TwoFactorAuthenticationService
      */
     protected $applicationName;
 
+    /**
+     * @var string
+     * @Flow\InjectConfiguration("secretKeyLength")
+     */
+    protected $secretKeyLength;
+
     public function getPasswordCredentialsSource(Account $account): string
     {
         if ($this->hasTwoFactorAuthenticationCredentials($account)) {
@@ -89,7 +95,7 @@ class TwoFactorAuthenticationService
         $google2fa = new Google2Fa();
 
         $existingCredentials = $this->getTwoFactorAuthenticationCredentials($account);
-        $secret = $existingCredentials->pendingSecret ?: $google2fa->generateSecretKey();
+        $secret = $existingCredentials->pendingSecret ?: $google2fa->generateSecretKey($this->getSecretKeyLength());
 
         $updatedCredentials = new TwoFactorAuthenticationCredentialsSource(
             $existingCredentials->credentialsSource,
@@ -138,5 +144,10 @@ class TwoFactorAuthenticationService
         return is_string($credentials)
         && is_array(json_decode($credentials, true))
         && (json_last_error() == JSON_ERROR_NONE) ? true : false;
+    }
+
+    protected function getSecretKeyLength(): int
+    {
+        return $this->secretKeyLength * 8;
     }
 }
