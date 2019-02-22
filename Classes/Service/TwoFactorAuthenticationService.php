@@ -1,153 +1,176 @@
 <?php
+declare(strict_types=1);
 namespace Yeebase\TwoFactorAuthentication\Service;
 
+use Doctrine\Common\Persistence\ObjectManager as DoctrineObjectManager;
+use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\DBALException;
+use Doctrine\DBAL\Exception\InvalidArgumentException;
+use Doctrine\ORM\EntityManager as DoctrineEntityManager;
 use Neos\Flow\Annotations as Flow;
-use Neos\Flow\Persistence\PersistenceManagerInterface;
 use Neos\Flow\Security\Account;
+use PragmaRX\Google2FA\Exceptions\IncompatibleWithGoogleAuthenticatorException;
+use PragmaRX\Google2FA\Exceptions\InvalidCharactersException;
+use PragmaRX\Google2FA\Exceptions\SecretKeyTooShortException;
 use PragmaRX\Google2FA\Google2FA;
-use Yeebase\TwoFactorAuthentication\Domain\Dto\TwoFactorAuthenticationCredentialsSource;
+use Yeebase\TwoFactorAuthentication\Domain\ValueObjects\OneTimePassword;
+use Yeebase\TwoFactorAuthentication\Domain\ValueObjects\ActivationQrCode;
+use Yeebase\TwoFactorAuthentication\Domain\ValueObjects\Secret;
+use Yeebase\TwoFactorAuthentication\Exception\InvalidOtpException;
 
 /**
  * @Flow\Scope("singleton")
  */
-class TwoFactorAuthenticationService
+final class TwoFactorAuthenticationService
 {
+    private const SECRETS_TABLE_NAME = 'yeebase_twofactorauthentication_secret';
 
     /**
-     * @var PersistenceManagerInterface
-     * @Flow\Inject
-     */
-    protected $persistenceManager;
-
-    /**
-     * @var string
      * @Flow\InjectConfiguration("applicationName")
+     * @var string
      */
     protected $applicationName;
 
     /**
-     * @var string
      * @Flow\InjectConfiguration("secretKeyLength")
+     * @var int
      */
     protected $secretKeyLength;
 
-    public function getPasswordCredentialsSource(Account $account): string
+    /**
+     * @var Connection
+     */
+    private $dbal;
+
+    /**
+     * @var Google2FA
+     */
+    private $google2FA;
+
+    public function initializeObject(): void
     {
-        if ($this->hasTwoFactorAuthenticationCredentials($account)) {
-            return $this->getTwoFactorAuthenticationCredentials($account)->credentialsSource;
-        } else {
-            return $account->getCredentialsSource();
-        }
+        $this->google2FA = new Google2FA();
     }
 
-    public function validateSecret(string $secret, Account $account, bool $isInitialValidation = false): bool
+    public function injectEntityManager(DoctrineObjectManager $entityManager): void
     {
-        $secretIsValid = false;
-        $credentials = $this->getTwoFactorAuthenticationCredentials($account);
-        $userSecret = $isInitialValidation ? $credentials->pendingSecret : $credentials->secret;
-        $secret = str_replace(' ', '', $secret);
+        if (!$entityManager instanceof DoctrineEntityManager) {
+            throw new \RuntimeException('Invalid EntityManager configured', 1550662984);
+        }
+        $this->dbal = $entityManager->getConnection();
+    }
+
+    /**
+     * Validate the given $otp and returns TRUE if it is valid for the specified $account
+     */
+    public function validateOtp(Account $account, OneTimePassword $otp): bool
+    {
+        try {
+            $secretData = $this->dbal->fetchAssoc('SELECT secret, timestamp FROM ' . self::SECRETS_TABLE_NAME . ' WHERE accountIdentifier = :accountIdentifier AND authenticationProviderName = :authenticationProviderName LIMIT 1', [
+                'accountIdentifier' => $account->getAccountIdentifier(),
+                'authenticationProviderName' => $account->getAuthenticationProviderName(),
+            ]);
+        } catch (DBALException $exception) {
+            throw new \RuntimeException('Failed to fetch secret from database, maybe a migration was not executed?', 1550662767, $exception);
+        }
+        if ($secretData === false) {
+            return false;
+        }
 
         try {
-            $secretIsValid = (new Google2Fa())->verifyKey($userSecret, $secret);
-        } catch (\Exception $e) {
-            // nothing to do here if validation fails
+            $newTimestamp = $this->google2FA->verifyKeyNewer($secretData['secret'], $otp->toString(), (int)$secretData['timestamp']);
+        } catch (IncompatibleWithGoogleAuthenticatorException | InvalidCharactersException | SecretKeyTooShortException $exception) {
+            throw new \RuntimeException('Failed to verify secret/otp', 1550662882, $exception);
         }
-
-        return $secretIsValid;
-    }
-
-    public function hasTwoFactorAuthenticationEnabled(Account $account): bool
-    {
-        return $this->hasTwoFactorAuthenticationCredentials($account) && $this->getTwoFactorAuthenticationCredentials($account)->enabled;
-    }
-
-    public function enableTwoFactorAuthentication(Account $account)
-    {
-        $existingCredentials = $this->getTwoFactorAuthenticationCredentials($account);
-        $updatedCredentials = new TwoFactorAuthenticationCredentialsSource(
-            $existingCredentials->credentialsSource,
-            true,
-            $existingCredentials->pendingSecret,
-            ''
-        );
-
-        $this->setTwoFactorAuthenticationCredentials($account, $updatedCredentials);
-        $this->persistenceManager->update($account);
-    }
-
-    public function disableTwoFactorAuthentication(Account $account)
-    {
-        $existingCredentials = $this->getTwoFactorAuthenticationCredentials($account);
-        $updatedCredentials = new TwoFactorAuthenticationCredentialsSource(
-            $existingCredentials->credentialsSource,
-            false,
-            '',
-            ''
-        );
-
-        $this->setTwoFactorAuthenticationCredentials($account, $updatedCredentials);
-        $this->persistenceManager->update($account);
-    }
-
-    public function createActivationQrCode(Account $account): string
-    {
-        $this->setupTwoFactorAuthenticationCredentials($account);
-        $google2fa = new Google2Fa();
-
-        $existingCredentials = $this->getTwoFactorAuthenticationCredentials($account);
-        $secret = $existingCredentials->pendingSecret ?: $google2fa->generateSecretKey($this->getSecretKeyLength());
-
-        $updatedCredentials = new TwoFactorAuthenticationCredentialsSource(
-            $existingCredentials->credentialsSource,
-            false,
-            '',
-            $secret
-        );
-
-        $qrCodeUrl = $google2fa->getQRCodeGoogleUrl($this->applicationName, $account->getAccountIdentifier(), $secret);
-
-        $this->setTwoFactorAuthenticationCredentials($account, $updatedCredentials);
-        $this->persistenceManager->whitelistObject($account);
-        $this->persistenceManager->update($account);
-
-        return $qrCodeUrl;
-    }
-
-    protected function setupTwoFactorAuthenticationCredentials(Account $account)
-    {
-        if ($this->hasTwoFactorAuthenticationCredentials($account)) {
-            return;
+        if ($newTimestamp === false) {
+            return false;
         }
-
-        $credentials = new TwoFactorAuthenticationCredentialsSource($account->getCredentialsSource(), false, '', '');
-        $this->setTwoFactorAuthenticationCredentials($account, $credentials);
-    }
-
-    protected function getTwoFactorAuthenticationCredentials(Account $account)
-    {
-        if (! $this->hasTwoFactorAuthenticationCredentials($account)) {
-            throw new \Exception('Trying to access uninitialized Two-Factor-Authentication credentials.', 1511271518);
+        try {
+            $this->dbal->update(self::SECRETS_TABLE_NAME, [
+                'timestamp' => $newTimestamp,
+            ], [
+                'accountIdentifier' => $account->getAccountIdentifier(),
+                'authenticationProviderName' => $account->getAuthenticationProviderName(),
+            ]);
+        } catch (DBALException $exception) {
+            throw new \RuntimeException('Failed to update secret in database', 1550662907, $exception);
         }
-
-        return TwoFactorAuthenticationCredentialsSource::fromJsonString($account->getCredentialsSource());
+        return true;
     }
 
-    protected function setTwoFactorAuthenticationCredentials(Account $account, TwoFactorAuthenticationCredentialsSource $credentials)
+    /**
+     * Generates a QR Code for the configured application name and the specified $holder
+     * The QR Code can be used to activate 2FA, @see enableTwoFactorAuthentication()
+     */
+    public function generateActivationQrCode(string $holder): ActivationQrCode
     {
-        $account->setCredentialsSource($credentials->toJsonString());
+        $secret = $this->generateSecret();
+        $qrCodeUrl = $this->google2FA->getQRCodeUrl($this->applicationName, $holder, $secret->toString());
+        return ActivationQrCode::fromSecretAndUrl($secret, $qrCodeUrl);
     }
 
-    protected function hasTwoFactorAuthenticationCredentials(Account $account): bool
+    /**
+     * Enables 2FA for the given $account if $secret and $otp are valid
+     * @throws InvalidOtpException if the OTP could not be verified
+     */
+    public function enableTwoFactorAuthentication(Account $account, Secret $secret, OneTimePassword $otp): void
     {
-        $credentials = $account->getCredentialsSource();
-
-        return is_string($credentials)
-        && is_array(json_decode($credentials, true))
-        && (json_last_error() == JSON_ERROR_NONE) ? true : false;
+        try {
+            $valid = $this->google2FA->verifyKey($secret->toString(), $otp->toString());
+        } catch (IncompatibleWithGoogleAuthenticatorException | InvalidCharactersException | SecretKeyTooShortException $exception) {
+            throw new \RuntimeException('Failed to verify secret/otp', 1550662882, $exception);
+        }
+        if ($valid !== true) {
+            throw new InvalidOtpException('Invalid Secret/OTP', 1550653165);
+        }
+        try {
+            $this->dbal->insert(self::SECRETS_TABLE_NAME, [
+                'accountIdentifier' => $account->getAccountIdentifier(),
+                'authenticationProviderName' => $account->getAuthenticationProviderName(),
+                'secret' => $secret->toString(),
+                'timestamp' => $this->google2FA->getTimestamp(),
+            ]);
+        } catch (DBALException $exception) {
+            throw new \RuntimeException('Failed to insert secret to database', 1550663161, $exception);
+        }
     }
 
-    protected function getSecretKeyLength(): int
+    /**
+     * Returns TRUE if the specified $account has 2FA enabled
+     */
+    public function isTwoFactorAuthenticationEnabledFor(Account $account): bool
     {
-        return $this->secretKeyLength * 8;
+        try {
+            $userSecret = $this->dbal->fetchColumn('SELECT secret FROM ' . self::SECRETS_TABLE_NAME . ' WHERE accountIdentifier = :accountIdentifier AND authenticationProviderName = :authenticationProviderName LIMIT 1', [
+                'accountIdentifier' => $account->getAccountIdentifier(),
+                'authenticationProviderName' => $account->getAuthenticationProviderName(),
+            ]);
+        } catch (DBALException $exception) {
+            throw new \RuntimeException('Failed to fetch secret from database, maybe a migration was not executed?', 1550663130, $exception);
+        }
+        return $userSecret !== false;
     }
+
+    /**
+     * @param Account $account
+     */
+    public function disableTwoFactorAuthentication(Account $account): void
+    {
+        try {
+            $this->dbal->delete(self::SECRETS_TABLE_NAME, [
+                'accountIdentifier' => $account->getAccountIdentifier(),
+                'authenticationProviderName' => $account->getAuthenticationProviderName(),
+            ]);
+        } catch (InvalidArgumentException | DBALException $exception) {
+            throw new \RuntimeException('Failed to remove secret from database', 1550663349, $exception);
+        }
+    }
+
+    private function generateSecret(): Secret
+    {
+        /** @noinspection PhpUnhandledExceptionInspection */
+        $secret = $this->google2FA->generateSecretKey($this->secretKeyLength * 8);
+        return Secret::fromString($secret);
+    }
+
 }
