@@ -7,8 +7,31 @@ Yeebase:
     # The application name that should appear in the authenticator app
     applicationName: 'default'
 
-    # The target of the redirect which is issued when no Two-Factor-Authentication secret is specified
-    authenticationEntryPoint:
-      package: ~
-      controller: ~
-      action: 'insertSecret'
+    # If set the 2FA is required
+    # If 2FA is not activated for the authenticating account, the user is redirected to the 2FA setup (requires routes.setup to be configured accordingly)
+    requireTwoFactorAuthentication: false
+
+    routes:
+      # Route to the 2FA login form of the application (required)
+      # Example:
+      #   '@package':    'Some.Package'
+      #   '@controller': 'Some\AuthenticationController'
+      #   '@action':     'someAction'
+      login: []
+
+      # Route to the 2FA setup form of the application (required if requireTwoFactorAuthentication is set!)
+      # Example:
+      #   '@package':    'Some.Package'
+      #   '@controller': 'Some\TwoFactorAuthenticationController'
+      #   '@action':     'someAction'
+      setup: []
+
+Neos:
+  Flow:
+    persistence:
+      doctrine:
+        migrations:
+          ignoredTables:
+            # Ignore "yeebase_twofactorauthentication_secret" table from doctrine migrations, so that the "doctrine:migrationgenerate" doesn't create
+            # a migration that drops the table because there is no corresponding domain model.
+            '^yeebase_twofactorauthentication_secret$': true
