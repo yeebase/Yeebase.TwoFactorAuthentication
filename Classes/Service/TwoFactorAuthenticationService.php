@@ -2,7 +2,6 @@
 declare(strict_types=1);
 namespace Yeebase\TwoFactorAuthentication\Service;
 
-use Doctrine\Common\Persistence\ObjectManager as DoctrineObjectManager;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DBALException;
 use Doctrine\DBAL\Exception\InvalidArgumentException;
