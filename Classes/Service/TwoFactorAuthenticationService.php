@@ -2,11 +2,10 @@
 declare(strict_types=1);
 namespace Yeebase\TwoFactorAuthentication\Service;
 
-use Doctrine\Common\Persistence\ObjectManager as DoctrineObjectManager;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DBALException;
 use Doctrine\DBAL\Exception\InvalidArgumentException;
-use Doctrine\ORM\EntityManager as DoctrineEntityManager;
+use Doctrine\ORM\EntityManagerInterface;
 use Neos\Flow\Annotations as Flow;
 use Neos\Flow\Security\Account;
 use PragmaRX\Google2FA\Exceptions\IncompatibleWithGoogleAuthenticatorException;
@@ -52,11 +51,8 @@ final class TwoFactorAuthenticationService
         $this->google2FA = new Google2FA();
     }
 
-    public function injectEntityManager(DoctrineObjectManager $entityManager): void
+    public function injectEntityManager(EntityManagerInterface $entityManager): void
     {
-        if (!$entityManager instanceof DoctrineEntityManager) {
-            throw new \RuntimeException('Invalid EntityManager configured', 1550662984);
-        }
         $this->dbal = $entityManager->getConnection();
     }
 
