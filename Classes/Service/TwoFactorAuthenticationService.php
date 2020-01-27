@@ -98,10 +98,10 @@ final class TwoFactorAuthenticationService
      * Generates a QR Code for the configured application name and the specified $holder
      * The QR Code can be used to activate 2FA, @see enableTwoFactorAuthentication()
      */
-    public function generateActivationQrCode(string $holder): ActivationQrCode
+    public function generateActivationQrCode(string $holder, string $applicationName = ''): ActivationQrCode
     {
         $secret = $this->generateSecret();
-        $qrCodeUrl = $this->google2FA->getQRCodeUrl($this->applicationName, $holder, $secret->toString());
+        $qrCodeUrl = $this->google2FA->getQRCodeUrl($applicationName === '' ? $this->applicationName : $applicationName, $holder, $secret->toString());
         return ActivationQrCode::fromSecretAndUrl($secret, $qrCodeUrl);
     }
 
