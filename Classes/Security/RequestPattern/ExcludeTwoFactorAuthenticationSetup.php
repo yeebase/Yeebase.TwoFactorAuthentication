@@ -3,7 +3,6 @@ declare(strict_types=1);
 namespace Yeebase\TwoFactorAuthentication\Security\RequestPattern;
 
 use Neos\Flow\Mvc\ActionRequest;
-use Neos\Flow\Mvc\RequestInterface;
 use Neos\Flow\Security\RequestPatternInterface;
 use Neos\Flow\Annotations as Flow;
 
@@ -19,7 +18,7 @@ final class ExcludeTwoFactorAuthenticationSetup implements RequestPatternInterfa
      */
     protected $setupRoute;
 
-    public function matchRequest(RequestInterface $request): bool
+    public function matchRequest(ActionRequest $request): bool
     {
         if (!$request instanceof ActionRequest) {
             return true;
