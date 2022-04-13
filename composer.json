@@ -4,7 +4,7 @@
   "description": "Two-Factor-Authentication (2FA) for Neos Flow",
   "license": "MIT",
   "require": {
-    "neos/flow": "^6.0",
+    "neos/flow": "^6.0 || ^7.0",
     "pragmarx/google2fa": "^4.0",
     "bacon/bacon-qr-code": "^2.0"
   },
