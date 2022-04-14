@@ -29,12 +29,10 @@ Yeebase:
 Neos:
   Flow:
     http:
-      chain:
-        'process':
-          chain:
-            'Yeebase.TwoFactorAuthentication:Redirect':
-              position: 'after dispatching'
-              component: 'Yeebase\TwoFactorAuthentication\Http\RedirectComponent'
+      middlewares:
+        'Yeebase.TwoFactorAuthentication:Redirect':
+          position: 'start'
+          middleware: 'Yeebase\TwoFactorAuthentication\Http\RedirectMiddleware'
     persistence:
       doctrine:
         migrations:

@@ -14,7 +14,10 @@ use Neos\Flow\Security\Exception\UnsupportedAuthenticationTokenException;
 use Neos\Flow\Session\SessionManagerInterface;
 use Neos\Utility\Exception\PropertyNotAccessibleException;
 use Neos\Utility\ObjectAccess;
+use Yeebase\TwoFactorAuthentication\Error\SecondFactorSetupException;
+use Yeebase\TwoFactorAuthentication\Error\SecondFactorLoginException;
 use Yeebase\TwoFactorAuthentication\Http\RedirectComponent;
+use Yeebase\TwoFactorAuthentication\Http\RedirectMiddleware;
 use Yeebase\TwoFactorAuthentication\Security\Authentication\Token\OtpToken;
 use Yeebase\TwoFactorAuthentication\Service\TwoFactorAuthenticationService;
 
@@ -55,7 +58,7 @@ final class TwoFactorAuthenticationProvider extends AbstractProvider
 
     /**
      * @param TokenInterface $authenticationToken
-     * @throws AuthenticationRequiredException | UnsupportedAuthenticationTokenException
+     * @throws AuthenticationRequiredException | UnsupportedAuthenticationTokenException | SecondFactorLoginException | SecondFactorSetupException
      */
     public function authenticate(TokenInterface $authenticationToken): void
     {
@@ -68,8 +71,7 @@ final class TwoFactorAuthenticationProvider extends AbstractProvider
         }
         if ($this->twoFactorAuthenticationService->isTwoFactorAuthenticationEnabledFor($account)) {
             if (!$authenticationToken->hasOtp()) {
-                $this->requestRedirect(RedirectComponent::REDIRECT_LOGIN);
-                return;
+                throw new SecondFactorLoginException();
             }
             if ($this->twoFactorAuthenticationService->validateOtp($account, $authenticationToken->getOtp())) {
                 /** @noinspection PhpUnhandledExceptionInspection */
@@ -82,33 +84,11 @@ final class TwoFactorAuthenticationProvider extends AbstractProvider
             return;
         }
         if ($this->requireTwoFactorAuthentication) {
-            $this->requestRedirect(RedirectComponent::REDIRECT_SETUP);
+            throw new SecondFactorSetupException();
         } else {
             /** @noinspection PhpUnhandledExceptionInspection */
             $authenticationToken->setAuthenticationStatus(TokenInterface::AUTHENTICATION_SUCCESSFUL);
             $authenticationToken->setAccount($account);
         }
-    }
-
-    /**
-     * Triggers a redirect by setting the corresponding HTTP component parameter for the @see RedirectComponent to pick up
-     *
-     * @param string $target one of the RedirectComponent::REDIRECT_* constants
-     */
-    private function requestRedirect(string $target): void
-    {
-        $requestHandler = $this->bootstrap->getActiveRequestHandler();
-        if (!$requestHandler instanceof HttpRequestHandlerInterface) {
-            throw new \RuntimeException('This provider only supports HTTP requests', 1549985779);
-        }
-        try {
-            $componentContext = ObjectAccess::getProperty($requestHandler, 'componentContext', true);
-        } catch (PropertyNotAccessibleException $e) {
-            throw new \RuntimeException('Faild to extract ComponentContext from RequestHandler', 1568188386, $e);
-        }
-        if (!$componentContext instanceof ComponentContext) {
-            throw new \RuntimeException('Faild to extract ComponentContext from RequestHandler', 1568188387);
-        }
-        $componentContext->setParameter(RedirectComponent::class, 'redirect', $target);
     }
 }

@@ -3,17 +3,20 @@ declare(strict_types=1);
 namespace Yeebase\TwoFactorAuthentication\Http;
 
 use Neos\Flow\Annotations as Flow;
-use Neos\Flow\Http\Component\ComponentChain;
-use Neos\Flow\Http\Component\ComponentContext;
-use Neos\Flow\Http\Component\ComponentInterface;
-use Neos\Flow\Http\Request as HttpRequest;
 use Neos\Flow\Mvc\ActionRequest;
 use Neos\Flow\Mvc\Routing\UriBuilder;
+use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\ServerRequestInterface;
+use Psr\Http\Server\MiddlewareInterface;
+use Psr\Http\Server\RequestHandlerInterface;
+use GuzzleHttp\Psr7\Response;
+use Yeebase\TwoFactorAuthentication\Error\SecondFactorLoginException;
+use Yeebase\TwoFactorAuthentication\Error\SecondFactorSetupException;
 
 /**
  * A HTTP component that redirects to the configured 2FA login/setup routes if requested
  */
-final class RedirectComponent implements ComponentInterface
+final class RedirectMiddleware implements MiddlewareInterface
 {
     public const REDIRECT_LOGIN = 'login';
     public const REDIRECT_SETUP = 'setup';
@@ -30,45 +33,46 @@ final class RedirectComponent implements ComponentInterface
      */
     protected $setupRouteValue;
 
-    public function handle(ComponentContext $componentContext)
+    public function process(ServerRequestInterface $request, RequestHandlerInterface $next): ResponseInterface
     {
-        $redirectTarget = $componentContext->getParameter(static::class, 'redirect');
-        if ($redirectTarget === null) {
-            return;
+        try {
+            $response = $next->handle($request);
+        } catch (\Exception $exception) {
+            if ($exception instanceof SecondFactorLoginException || $exception->getPrevious() instanceof SecondFactorLoginException) {
+                return $this->redirectToLogin($request);
+            } elseif ($exception instanceof SecondFactorSetupException || $exception->getPrevious() instanceof SecondFactorSetupException) {
+                return $this->redirectToSetup($request);
+            } else {
+                throw $exception;
+            }
         }
-        if ($redirectTarget === self::REDIRECT_LOGIN) {
-            $this->redirectToLogin($componentContext);
-        } elseif ($redirectTarget === self::REDIRECT_SETUP) {
-            $this->redirectToSetup($componentContext);
-        } else {
-            throw new \RuntimeException(sprintf('Invalid redirect target "%s"', $redirectTarget), 1568189192);
-        }
+        return $response;
     }
 
     /**
      * Triggers a redirect to the 2FA login route configured at routes.login or throws an exception if the configuration is missing/incorrect
      */
-    private function redirectToLogin(ComponentContext $componentContext): void
+    private function redirectToLogin(ServerRequestInterface $request): ResponseInterface
     {
         try {
             $this->validateRouteValues($this->loginRouteValues);
         } catch (\InvalidArgumentException $exception) {
             throw new \RuntimeException('Missing/invalid routes.login configuration: ' . $exception->getMessage(), 1550660144, $exception);
         }
-        $this->redirect($componentContext, $this->loginRouteValues);
+        return $this->redirect($request, $this->loginRouteValues);
     }
 
     /**
      * Triggers a redirect to the 2FA setup route configured at routes.setup or throws an exception if the configuration is missing/incorrect
      */
-    private function redirectToSetup(ComponentContext $componentContext): void
+    private function redirectToSetup(ServerRequestInterface $request): ResponseInterface
     {
         try {
             $this->validateRouteValues($this->setupRouteValue);
         } catch (\InvalidArgumentException $exception) {
             throw new \RuntimeException('Missing/invalid routes.setup configuration: ' . $exception->getMessage(), 1550660178, $exception);
         }
-        $this->redirect($componentContext, $this->setupRouteValue);
+        return $this->redirect($request, $this->setupRouteValue);
     }
 
     private function validateRouteValues(array $routeValues): void
@@ -81,16 +85,13 @@ final class RedirectComponent implements ComponentInterface
         }
     }
 
-    private  function redirect(ComponentContext $componentContext, array $routeValues): void
+    private  function redirect(ServerRequestInterface $httpRequest, array $routeValues): ResponseInterface
     {
-        /** @var HttpRequest $httpRequest */
-        $httpRequest = $componentContext->getHttpRequest();
-        $actionRequest = new ActionRequest($httpRequest);
+        $actionRequest = ActionRequest::fromHttpRequest($httpRequest);
         $uriBuilder = new UriBuilder();
         $uriBuilder->setRequest($actionRequest);
         $redirectUrl = $uriBuilder->setCreateAbsoluteUri(true)->setFormat('html')->build($routeValues);
 
-        $componentContext->replaceHttpResponse($componentContext->getHttpResponse()->withStatus(303)->withHeader('Location', $redirectUrl));
-        $componentContext->setParameter(ComponentChain::class, 'cancel', true);
+        return (new Response())->withStatus(303)->withHeader('Location', $redirectUrl);
     }
 }
